@@ -16,14 +16,14 @@ set.seed(42)
 # === File paths ===
 base_path <- "C:/Users/Mr.Me/Documents/"
 
-data <- read.csv(paste0(base_path, "BikeData.csv"))
-
-data %>%
-  count(STARTSTATIONNAME, sort = TRUE) %>%
-  head(10)  # Top 10 stations
+data_original <- read.csv(paste0(base_path, "BikeData.csv"))
 
 
-dataNew
+data <- data_original %>%
+  mutate(
+    DURATION_MIN = (ENDTIMEMS - STARTTIMEMS) / 60000  # convert ms to minutes
+  )
+
 
 #test commit
 ```
