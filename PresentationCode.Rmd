@@ -6,7 +6,24 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+library(tidyr)
+library(dplyr)
+library(randomForest)
+library(moments)  # for skewness and kurtosis
+
+set.seed(42)
+
+# === File paths ===
+base_path <- "C:/Users/Mr.Me/Documents/"
+
+data <- read.csv(paste0(base_path, "BikeData.csv"))
+
+data %>%
+  count(STARTSTATIONNAME, sort = TRUE) %>%
+  head(10)  # Top 10 stations
+
+
+dataNew
 
 #test commit
 ```
