@@ -5,45 +5,156 @@ date: "2025-07-14"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
+## Data Setup
+
+```{r echo = FALSE}
 library(tidyr)
-library(dplyr)
+library(dplyr)      # data manipulation
+library(tidyverse)   # readr, dplyr, ggplot2, etc.
+library(lubridate)   # date‑time helpers
+library(scales)      # nicer axis labels (optional)
 library(randomForest)
 library(moments)  # for skewness and kurtosis
 
 set.seed(42)
 
 # === File paths ===
-base_path <- "C:/Users/Mr.Me/Documents/"
+#base_path <- "C:/Users/Mr.Me/Documents/"
+base_path <- "/Users/lindenwareing/Desktop/BEX3727/Presentation/ProjectRepo/"
 
-data_original <- read.csv(paste0(base_path, "BikeData.csv"))
+bixi <- read.csv(paste0(base_path, "2024_Bixi_Data.csv"))
 
-
-data <- data_original %>%
+bixi <- bixi %>% 
   mutate(
-    DURATION_MIN = (ENDTIMEMS - STARTTIMEMS) / 60000  # convert ms to minutes
+    start_dt  = as_datetime(STARTTIMEMS / 1000, tz = "America/Montreal"),
+    end_dt    = as_datetime(ENDTIMEMS   / 1000, tz = "America/Montreal"),
+    trip_min  = as.numeric(difftime(end_dt, start_dt, units = "mins")),
+    month     = floor_date(start_dt, "month"),
+    weekday   = wday(start_dt, label = TRUE, week_start = 1),  # Mon‑Sun
+    hour      = hour(start_dt)
   )
 
 
-#test commit
 ```
 
-## R Markdown
+## Seasonality & hourly patterns
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+```{r echo = FALSE}
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+monthly <- bixi %>% count(month)
+ggplot(monthly, aes(month, n)) +
+  geom_line(linewidth = 1) +
+  labs(title = "BIXI 2024 — Monthly Trip Volume",
+       x = NULL, y = "Trips") +
+  scale_y_continuous(labels = comma)
 
-```{r cars}
-summary(cars)
+hourly <- bixi %>% count(hour)
+
+ggplot(hourly, aes(hour, n)) +
+  geom_col(fill = "steelblue") +
+  labs(title = "Trips by Hour of Day",
+       x = "Hour (0 to 23)",
+       y = "Trips") +
+  scale_y_continuous(
+    labels = comma,                 # 1,000,000 instead of 1e+06
+    breaks = pretty_breaks()        # “nice” whole‑number breaks
+  )
+
+
 ```
 
-## Including Plots
+## Weekday vs Weekend usage (proxy for commute vs leisure)
 
 You can also embed plots, for example:
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r echo = FALSE}
+
+wk_split <- bixi %>% 
+  mutate(day_type = if_else(weekday %in% c("Sat","Sun"), "Weekend", "Weekday")) %>%
+  count(day_type, weekday)
+
+ggplot(wk_split, aes(weekday, n, fill = day_type)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(values = c("#1b9e77","#d95f02")) +
+  labs(title = "Weekday vs Weekend Rides",
+       x = NULL, y = "Trips", fill = "")
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## Station hotspots + flow imbalance
+# This shows the popular stations, and the difference in rides completed here to rides started
+# Hence giving us an imbalance on amount of bikes here in 2024
+
+```{r echo = FALSE}
+
+top_starts <- bixi %>% 
+  count(STARTSTATIONNAME, sort = TRUE) %>% 
+  slice_head(n = 10)
+
+top_ends <- bixi %>% 
+  count(ENDSTATIONNAME, sort = TRUE) %>% 
+  slice_head(n = 10)
+
+net_flow <- bixi %>% 
+  # rename once so both columns share the same temporary field name
+  mutate(station_start = STARTSTATIONNAME,
+         station_end   = ENDSTATIONNAME) %>% 
+  
+  # count departures for each station
+  count(station_start, name = "departures") %>% 
+  
+  # join with arrivals (note the renaming inside count())
+  full_join(
+    bixi %>% count(station_start = ENDSTATIONNAME, name = "arrivals"),
+    by = "station_start"
+  ) %>% 
+
+  # clean up + compute net
+  rename(station = station_start) %>% 
+  replace_na(list(departures = 0, arrivals = 0)) %>% 
+  mutate(net = departures - arrivals) %>% 
+  arrange(desc(net))
+
+# ── Preview ──────────────────────────────────────────────────────
+print(top_starts)
+print(top_ends)
+print(net_flow %>% slice_head(n = 10))
+
+```
+
+## Trip‑duration statistics & distribution
+
+```{r echo = FALSE}
+
+summary(bixi$trip_min)  # min, median, mean, etc.
+
+ggplot(bixi, aes(trip_min)) +
+  geom_histogram(binwidth = 2, fill = "steelblue", alpha = 0.8) +
+  coord_cartesian(xlim = c(0, 60)) +  # focus on <60 min
+  labs(title = "Trip Duration Distribution (<60 min)",
+       x = "Duration (minutes)", y = "Trips")
+
+```
+
+## Q5  Rough CO₂ savings estimate
+# ------------------------------------------------
+# Assumption: mean trip distance = 1.8 km (published by BIXI)
+#            average car emits 0.192 kg CO₂ per km (Transport Canada)
+
+```{r echo = FALSE}
+
+km_per_trip      <- 1.8
+kg_co2_per_km    <- 0.192
+
+total_trips      <- nrow(bixi)
+total_km         <- total_trips * km_per_trip
+co2_saved_tonnes <- (total_km * kg_co2_per_km) / 1000   # kg ➜ tonnes
+
+cat("\n=== Sustainability headline ===\n")
+cat(sprintf("Trips: %s\nDistance (km): %.0f\nCO₂ avoided (tonnes): %.0f\n",
+            comma(total_trips),
+            total_km,
+            co2_saved_tonnes))
+
+```
+
