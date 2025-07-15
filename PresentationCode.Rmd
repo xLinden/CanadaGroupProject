@@ -189,3 +189,27 @@ print(top10_routes)
 
 ```
 
+
+## Number of rides per month
+
+```{r}
+
+rides_month <- bixi %>% 
+  mutate(
+    start_dt = as_datetime(STARTTIMEMS / 1000, tz = "America/Montreal"),
+    month    = as.Date(floor_date(start_dt, "month"))   # << convert to Date
+  ) %>% 
+  count(month)
+
+ggplot(rides_month, aes(month, n)) +
+  geom_col(fill = "steelblue") +
+  scale_x_date(date_labels = "%b", date_breaks = "1 month") +
+  scale_y_continuous(labels = comma) +
+  labs(title = "BIXI 2024 – Monthly Trip Volume",
+       x = NULL, y = "Trips") +
+  theme_minimal()
+
+```
+
+
+
