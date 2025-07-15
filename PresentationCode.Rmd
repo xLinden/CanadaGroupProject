@@ -65,8 +65,6 @@ ggplot(hourly, aes(hour, n)) +
 
 ## Weekday vs Weekend usage (proxy for commute vs leisure)
 
-You can also embed plots, for example:
-
 ```{r echo = FALSE}
 
 wk_split <- bixi %>% 
@@ -155,6 +153,39 @@ cat(sprintf("Trips: %s\nDistance (km): %.0f\nCO₂ avoided (tonnes): %.0f\n",
             comma(total_trips),
             total_km,
             co2_saved_tonnes))
+
+```
+
+## Most popular routes
+
+```{r echo = FALSE}
+
+get_top_routes <- function(data, n = 10, share = TRUE) {
+  
+  total <- nrow(data)                           # total rows in the file
+  
+  out <- data %>% 
+    count(STARTSTATIONNAME, ENDSTATIONNAME,     # count every OD pair
+          name  = "trips",
+          sort  = TRUE) %>%                     # highest‑to‑lowest
+    slice_head(n = n)                           # keep top‑n only
+  
+  if (share) {
+    out <- out %>%
+      mutate(share = round(100 * trips / total, 2))  # % of total trips
+  }
+  
+  out <- out %>% 
+    rename(start_station = STARTSTATIONNAME,
+           end_station   = ENDSTATIONNAME)
+  
+  out
+}
+
+top10_routes <- get_top_routes(bixi, n = 10)
+
+print(top10_routes)
+
 
 ```
 
