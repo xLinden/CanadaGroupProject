@@ -450,9 +450,69 @@ ggplot(map_data) +
 
 ```{r echo = FALSE}
 
+# Cross-arrondissement trips only
+flow_cross_seasonal <- bixi %>%
+  filter(STARTSTATIONARRONDISSEMENT != ENDSTATIONARRONDISSEMENT) %>%
+  group_by(season, STARTSTATIONARRONDISSEMENT, ENDSTATIONARRONDISSEMENT) %>%
+  summarise(trips = n(), .groups = "drop") %>%
+  
+  # Outflows
+  group_by(season, STARTSTATIONARRONDISSEMENT) %>%
+  summarise(outflow = sum(trips), .groups = "drop") %>%
+  rename(arrondissement = STARTSTATIONARRONDISSEMENT) %>%
+  
+  # Join inflows
+  full_join(
+    bixi %>%
+      filter(STARTSTATIONARRONDISSEMENT != ENDSTATIONARRONDISSEMENT) %>%
+      group_by(season, ENDSTATIONARRONDISSEMENT) %>%
+      summarise(inflow = n(), .groups = "drop") %>%
+      rename(arrondissement = ENDSTATIONARRONDISSEMENT),
+    by = c("season", "arrondissement")
+  ) %>%
+  mutate(
+    inflow = replace_na(inflow, 0),
+    outflow = replace_na(outflow, 0),
+    net_flow = inflow - outflow
+  )
 
 
 
+flow_cross_seasonal <- flow_cross_seasonal %>%
+  mutate(arrondissement_clean = arrondissement %>%
+           str_replace_all("–", "-") %>%
+           str_replace_all(" - ", "-") %>%
+           str_squish() %>%
+           stri_trans_general("Latin-ASCII"))
+
+arr_map_clean <- arr_map %>%
+  mutate(arrondissement_clean = NOM %>%
+           str_replace_all("–", "-") %>%
+           str_replace_all(" - ", "-") %>%
+           str_squish() %>%
+           stri_trans_general("Latin-ASCII"))
+
+map_data_seasonal <- arr_map_clean %>%
+  right_join(flow_cross_seasonal, by = "arrondissement_clean")
+
+ggplot(map_data_seasonal) +
+  geom_sf(aes(fill = net_flow), color = "white", size = 0.3) +
+  scale_fill_gradient2(
+    low = "#d73027", mid = "#f0f0f0", high = "#1a9850",
+    midpoint = 0,
+    name = "Net Flow", na.value = "#cccccc"
+  ) +
+  labs(
+    title = "BIXI Net Flow by Arrondissement and Season",
+    subtitle = "Green = Net Inflow | Red = Net Outflow",
+    fill = "Net Flow"
+  ) +
+  facet_wrap(~ season) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    strip.text = element_text(size = 13, face = "bold")
+  )
 
 
 
