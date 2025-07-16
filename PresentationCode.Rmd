@@ -114,6 +114,7 @@ ggplot(bixi, aes(trip_min)) +
 
 ```
 
+
 ## Most Common Routes
 ```{r echo = FALSE}
 bixi <- bixi %>%
@@ -155,6 +156,61 @@ ggplot(bixi_top_routes, aes(trip_min)) +
 
 ```
 
+## Pie chart
+```{r echo = FALSE}
+
+# Step 1: Count trips by route, rank them
+route_counts <- bixi %>%
+  count(route, sort = TRUE) %>%
+  mutate(rank = row_number())
+
+# Step 2: Create route buckets
+route_buckets <- route_counts %>%
+  mutate(bucket = case_when(
+    rank <= 5000   ~ "Top 1–5000",
+    rank <= 10000   ~ "Top 5001–10000",
+    rank <= 15000   ~ "Top 10001–15000",
+    rank <= 20000   ~ "Top 15001–20000",
+    rank <= 25000   ~ "Top 20001–25000",
+    rank <= 30000   ~ "Top 25001–30000",
+    rank <= 35000   ~ "Top 30001–35000",
+    TRUE          ~ "Other"
+  ))
+
+
+# Step 3: Aggregate totals per bucket
+bucket_summary <- route_buckets %>%
+  group_by(bucket) %>%
+  summarise(trips = sum(n), .groups = "drop") %>%
+  mutate(
+    share = trips / sum(trips),
+    share_pct = round(100 * share, 1),
+    label = paste0(bucket, "\n", share_pct, "%")
+  ) %>%
+  arrange(desc(share))
+
+# Step 4: Donut chart
+ggplot(bucket_summary, aes(x = 2, y = share, fill = bucket)) +
+  geom_col(width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  xlim(0.5, 2.5) +
+  labs(
+    title = "BIXI Route Usage by Frequency Bucket",
+    x = NULL, y = NULL, fill = "Route Bucket"
+  ) +
+  theme_void() +
+  geom_text(aes(label = label),
+            position = position_stack(vjust = 0.5),
+            size = 3) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+
+```
+
+## travel within trips
 ```{r echo = FALSE}
 # Step 1: Get top 5 routes
 top5_routes <- bixi %>%
@@ -183,9 +239,6 @@ ggplot(route_by_weekday, aes(x = weekday, y = n, fill = season)) +
   theme(strip.text = element_text(size = 10))
 
 ```
-
-
-
 
 
 ## Do we travel within Arrondisement
