@@ -270,7 +270,194 @@ bixi %>% count(same_arrondissement)
 
 
 
+## ARRONDIMSNET FLOW/MISMATCH
+```{r echo = FALSE}
+# === Inflows and Outflows ===
+inflow <- bixi %>%
+  count(ENDSTATIONARRONDISSEMENT, name = "inflow") %>%
+  rename(arrondissement = ENDSTATIONARRONDISSEMENT)
 
+outflow <- bixi %>%
+  count(STARTSTATIONARRONDISSEMENT, name = "outflow") %>%
+  rename(arrondissement = STARTSTATIONARRONDISSEMENT)
+
+# === Combine and calculate net flow ===
+flow <- full_join(inflow, outflow, by = "arrondissement") %>%
+  mutate(
+    inflow = coalesce(inflow, 0),
+    outflow = coalesce(outflow, 0),
+    net_flow = inflow - outflow
+  )
+
+```
+
+### MISMATCH METRICS - INCLUDINGG WITHIN ARRONDISMENT TRIPS
+```{r echo = FALSE}
+# Top 10 inflows
+flow %>%
+  top_n(10, inflow) %>%
+  ggplot(aes(x = reorder(arrondissement, inflow), y = inflow)) +
+  geom_col(fill = "#1f77b4") +
+  coord_flip() +
+  labs(title = "Top 10 BIXI Inflows by Arrondissement (All Trips)", x = "Arrondissement", y = "Trips In") +
+  theme_minimal(base_size = 13)
+
+# Top 10 outflows
+flow %>%
+  top_n(10, outflow) %>%
+  ggplot(aes(x = reorder(arrondissement, outflow), y = outflow)) +
+  geom_col(fill = "#ff7f0e") +
+  coord_flip() +
+  labs(title = "Top 10 BIXI Outflows by Arrondissement (All Trips)", x = "Arrondissement", y = "Trips Out") +
+  theme_minimal(base_size = 13)
+
+# Top 10 Net Flow Mismatch
+flow %>%
+  top_n(10, abs(net_flow)) %>%
+  ggplot(aes(x = reorder(arrondissement, net_flow), y = net_flow, fill = net_flow > 0)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_manual(values = c("#ff7f0e", "#1f77b4")) +
+  labs(title = "Top 10 BIXI Net Flow Mismatches (All Trips)", x = "Arrondissement", y = "Net Inflow (In - Out)") +
+  theme_minimal(base_size = 13)
+
+```
+
+
+## EXCLUDING INNER ARRODNISMENT TRIPS
+```{r echo = FALSE}
+
+# Exclude trips where start == end arrondissement
+bixi_cross <- bixi %>%
+  filter(STARTSTATIONARRONDISSEMENT != ENDSTATIONARRONDISSEMENT)
+
+# Inflows and Outflows (cross-arrondissement only)
+inflow_cross <- bixi_cross %>%
+  count(ENDSTATIONARRONDISSEMENT, name = "inflow") %>%
+  rename(arrondissement = ENDSTATIONARRONDISSEMENT)
+
+outflow_cross <- bixi_cross %>%
+  count(STARTSTATIONARRONDISSEMENT, name = "outflow") %>%
+  rename(arrondissement = STARTSTATIONARRONDISSEMENT)
+
+# Combine and calculate net flow
+flow_cross <- full_join(inflow_cross, outflow_cross, by = "arrondissement") %>%
+  mutate(
+    inflow = coalesce(inflow, 0),
+    outflow = coalesce(outflow, 0),
+    net_flow = inflow - outflow
+  )
+
+# Top 10 inflows (cross-only)
+flow_cross %>%
+  top_n(10, inflow) %>%
+  ggplot(aes(x = reorder(arrondissement, inflow), y = inflow)) +
+  geom_col(fill = "#2ca02c") +
+  coord_flip() +
+  labs(title = "Top 10 BIXI Inflows by Arrondissement", x = "Arrondissement", y = "Trips In") +
+  theme_minimal(base_size = 13)
+
+# Top 10 outflows (cross-only)
+flow_cross %>%
+  top_n(10, outflow) %>%
+  ggplot(aes(x = reorder(arrondissement, outflow), y = outflow)) +
+  geom_col(fill = "#d62728") +
+  coord_flip() +
+  labs(title = "Top 10 BIXI Outflows by Arrondissement", x = "Arrondissement", y = "Trips Out") +
+  theme_minimal(base_size = 13)
+
+# Top 10 net flow mismatches (cross-only)
+flow_cross %>%
+  top_n(10, abs(net_flow)) %>%
+  ggplot(aes(x = reorder(arrondissement, net_flow), y = net_flow, fill = net_flow > 0)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_manual(values = c("#d62728", "#2ca02c")) +
+  labs(title = "Top 10 Net Flow Mismatches", x = "Arrondissement", y = "Net Inflow (In - Out)") +
+  theme_minimal(base_size = 13)
+
+
+```
+
+## Attemoting to map by arrondisment
+```{r echo = FALSE}
+install.packages(c("sf", "ggplot2", "dplyr"))  # If not already installed
+library(sf)
+library(dplyr)
+library(ggplot2)
+
+# Load GeoJSON
+arr_map <- st_read("limites-administratives-agglomeration.json")  # downloaded file
+
+
+
+# Clean arrondissement names in flow_cross
+flow_cross_clean <- flow_cross %>%
+  mutate(
+    arrondissement_clean = arrondissement %>%
+      str_replace_all("–", "-") %>%        # Replace en dash with hyphen
+      str_replace_all(" - ", "-") %>%      # Remove space around dash
+      str_squish() %>%                     # Trim extra spaces
+      stri_trans_general("Latin-ASCII")    # Remove accents
+  )
+
+# Clean arrondissement names in GeoJSON
+arr_map_clean <- arr_map %>%
+  mutate(
+    arrondissement_clean = NOM %>%
+      str_replace_all("–", "-") %>%
+      str_replace_all(" - ", "-") %>%
+      str_squish() %>%
+      stri_trans_general("Latin-ASCII")
+  )
+
+# Optional: check unmatched names
+# setdiff(flow_cross_clean$arrondissement_clean, arr_map_clean$arrondissement_clean)
+
+# Filter out off-island cities that aren’t in the map
+valid_arrondissements <- arr_map_clean$arrondissement_clean
+flow_cross_clean <- flow_cross_clean %>%
+  filter(arrondissement_clean %in% valid_arrondissements)
+
+# ====== STEP 3: JOIN SPATIAL DATA ======
+map_data <- arr_map_clean %>%
+  left_join(flow_cross_clean, by = "arrondissement_clean")
+
+# ====== STEP 4: PLOT MAP ======
+ggplot(map_data) +
+  geom_sf(aes(fill = net_flow), color = "white", size = 0.3) +
+  scale_fill_gradient2(
+    low = "#d73027", mid = "#f0f0f0", high = "#1a9850",
+    midpoint = 0,
+    name = "Net Flow",
+    na.value = "#cccccc"
+  ) +
+  labs(
+    title = "BIXI Net Flow Mismatch by Arrondissement",
+    subtitle = "Green = Net Inflow | Red = Net Outflow",
+    fill = "Net Flow"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "right"
+  )
+
+
+
+```
+
+
+```{r echo = FALSE}
+
+
+
+
+
+
+
+
+```
 
 
 
