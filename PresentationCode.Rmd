@@ -19,8 +19,8 @@ library(moments)  # for skewness and kurtosis
 set.seed(42)
 
 # === File paths ===
-#base_path <- "C:/Users/Mr.Me/Documents/"
-base_path <- "/Users/lindenwareing/Desktop/BEX3727/Presentation/ProjectRepo/"
+base_path <- "C:/Users/Mr.Me/Documents/"
+#base_path <- "/Users/lindenwareing/Desktop/BEX3727/Presentation/ProjectRepo/"
 
 bixi <- read.csv(paste0(base_path, "2024_Bixi_Data.csv"))
 
@@ -34,7 +34,8 @@ bixi <- bixi %>%
     hour      = hour(start_dt)
   )
 
-
+save.image("my_workspace.RData")
+load("my_workspace.RData")
 ```
 
 ## Seasonality & hourly patterns
@@ -62,6 +63,164 @@ ggplot(hourly, aes(hour, n)) +
 
 
 ```
+
+```{r}
+# Your R code here
+# Step 1: Add a season column
+bixi <- bixi %>%
+  mutate(
+    season = case_when(
+      month(start_dt) %in% c(12, 1, 2)  ~ "Winter",
+      month(start_dt) %in% c(3, 4, 5)   ~ "Spring",
+      month(start_dt) %in% c(6, 7, 8)   ~ "Summer",
+      month(start_dt) %in% c(9, 10, 11) ~ "Fall"
+    ),
+    day_type = if_else(weekday %in% c("Sat", "Sun"), "Weekend", "Weekday")
+  )
+
+# Step 2: Count trips by season, weekday, and type
+wk_season <- bixi %>%
+  count(season, weekday, day_type)
+
+# Step 3: Plot: Weekday vs Weekend by Season
+ggplot(wk_season, aes(weekday, n, fill = day_type)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~ season, nrow = 2) +
+  scale_fill_manual(values = c("#1b9e77", "#d95f02")) +
+  labs(
+    title = "Weekday vs Weekend Rides by Season",
+    x = NULL, y = "Trips", fill = ""
+  ) +
+  theme_minimal()
+
+
+
+
+
+
+```
+```{r}
+# Your R code here
+# Plot: distribution by season and day_type
+ggplot(bixi, aes(trip_min)) +
+  geom_histogram(binwidth = 2, fill = "steelblue", alpha = 0.8) +
+  coord_cartesian(xlim = c(0, 60)) +
+  facet_grid(season ~ day_type) +
+  labs(
+    title = "Trip Duration Distribution by Season and Day Type (<60 min)",
+    x = "Duration (minutes)", y = "Trips"
+  ) +
+  theme_minimal()
+
+```
+
+## Most Common Routes
+```{r echo = FALSE}
+bixi <- bixi %>%
+  mutate(
+    route = paste(STARTSTATIONNAME, "→", ENDSTATIONNAME)
+  )
+
+bixi %>% count(route, sort = TRUE)  # Top routes
+ggplot(bixi %>% count(route, sort = TRUE) %>% slice_max(n, n = 10),
+       aes(x = reorder(route, n), y = n)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Top 10 BIXI Routes", x = "Route", y = "Trips")
+
+### Finding Histogram within trips
+
+
+# Step 2: Find top 10 most frequent routes
+top_routes <- bixi %>%
+  count(route, sort = TRUE) %>%
+  slice_max(n, n = 10) %>%
+  pull(route)  # Extract just the route names
+
+# Step 3: Filter bixi data for only those routes
+bixi_top_routes <- bixi %>%
+  filter(route %in% top_routes)
+
+# Step 4: Plot histograms (trip duration < 60 min) faceted by route
+ggplot(bixi_top_routes, aes(trip_min)) +
+  geom_histogram(binwidth = 2, fill = "steelblue", alpha = 0.8) +
+  coord_cartesian(xlim = c(0, 60)) +
+  facet_wrap(~ route, ncol = 2, scales = "free_y") +
+  labs(
+    title = "Trip Duration Distribution for Top 10 Routes (<60 min)",
+    x = "Duration (minutes)", y = "Trips"
+  ) +
+  theme_minimal() +
+  theme(strip.text = element_text(size = 10))
+
+```
+
+```{r echo = FALSE}
+# Step 1: Get top 5 routes
+top5_routes <- bixi %>%
+  count(route, sort = TRUE) %>%
+  slice_max(n, n = 5) %>%
+  pull(route)
+
+# Step 2: Filter to just those
+bixi_top5 <- bixi %>%
+  filter(route %in% top5_routes)
+
+# Step 3: Count rides per weekday and season
+route_by_weekday <- bixi_top5 %>%
+  count(route, weekday, season)
+
+# Step 4: Plot — one facet per route, bars per weekday, colored by season
+ggplot(route_by_weekday, aes(x = weekday, y = n, fill = season)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~ route, ncol = 1, scales = "free_y") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Top 5 BIXI Routes — Usage by Weekday and Season",
+    x = "Day of the Week", y = "Trips", fill = "Season"
+  ) +
+  theme_minimal() +
+  theme(strip.text = element_text(size = 10))
+
+```
+
+
+
+
+
+## Do we travel within Arrondisement
+```{r echo = FALSE}
+bixi <- bixi %>%
+  mutate(
+    route_arr = paste(STARTSTATIONARRONDISSEMENT, "→", ENDSTATIONARRONDISSEMENT)
+  )
+bixi %>% count(route_arr, sort = TRUE)
+
+# Travel within Arrondisment Flag
+bixi <- bixi %>%
+  mutate(
+    same_arrondissement = STARTSTATIONARRONDISSEMENT == ENDSTATIONARRONDISSEMENT
+  )
+
+bixi %>% count(same_arrondissement)
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
 
 ## Weekday vs Weekend usage (proxy for commute vs leisure)
 
